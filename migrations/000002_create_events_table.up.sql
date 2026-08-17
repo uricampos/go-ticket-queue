@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL,
+  description TEXT NOT NULL,
+  category VARCHAR(255) NOT NULL,
+  date TIMESTAMPTZ NOT NULL,
+  location VARCHAR(255) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
