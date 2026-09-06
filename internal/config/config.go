@@ -26,6 +26,7 @@ func Load() (*Config, error) {
 
 	return &Config{
 		Env:        os.Getenv("ENV"),
+		DBHost:     os.Getenv("DB_HOST"),
 		DBPort:     os.Getenv("DB_PORT"),
 		DBName:     os.Getenv("DB_NAME"),
 		DBUser:     os.Getenv("DB_USER"),
