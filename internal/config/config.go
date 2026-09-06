@@ -8,6 +8,7 @@ import (
 
 type Config struct {
 	Env        string
+	DBHost     string
 	DBPort     string
 	DBName     string
 	DBUser     string
