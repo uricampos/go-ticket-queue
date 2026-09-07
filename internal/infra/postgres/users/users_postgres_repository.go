@@ -3,6 +3,7 @@ package users
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -42,6 +43,11 @@ func (r *UserRepository) GetUserByID(ctx context.Context, id uuid.UUID) (*users.
 	var createdAt time.Time
 
 	err := r.db.QueryRowContext(ctx, "SELECT username, created_at FROM users WHERE id = $1", id).Scan(&username, &createdAt)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -58,6 +64,10 @@ func (r *UserRepository) GetUserByUsername(ctx context.Context, username string)
 	var createdAt time.Time
 
 	err := r.db.QueryRowContext(ctx, "SELECT id, created_at FROM users WHERE username = $1", username).Scan(&id, &createdAt)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
 
 	if err != nil {
 		return nil, err
