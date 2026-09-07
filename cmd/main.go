@@ -1,7 +1,31 @@
 package main
 
-import "fmt"
+import (
+	"log"
+
+	"github.com/uricampos/go-ticket-queue/internal/config"
+	"github.com/uricampos/go-ticket-queue/internal/infra/postgres"
+)
 
 func main() {
-	fmt.Print("Hello World")
+	// spin up env
+
+	// config env
+	cfg, err := config.Load()
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	db, err := postgres.Connect(*cfg)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer db.Close()
+
+	// setup routes
+
+	// server listen
 }
