@@ -9,5 +9,5 @@ func SetupUsersRoutes(router *gin.Engine, userHandler *users.UserHandler) {
 	userGroup := router.Group("/users")
 	userGroup.POST("", userHandler.CreateUser)
 	userGroup.GET("/:id", userHandler.GetUserByID)
-	userGroup.GET("/:username", userHandler.GetUserByUsername)
+	userGroup.GET("", userHandler.GetUserByUsername)
 }

@@ -105,7 +105,7 @@ func (h *UserHandler) GetUserByID(ctx *gin.Context) {
 }
 
 func (h *UserHandler) GetUserByUsername(ctx *gin.Context) {
-	username := ctx.Param("username")
+	username := ctx.Query("username")
 
 	user, err := h.svc.GetUserByUsername(ctx.Request.Context(), username)
 
