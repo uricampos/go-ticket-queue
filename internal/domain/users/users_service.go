@@ -2,7 +2,6 @@ package users
 
 import (
 	"context"
-	"errors"
 
 	"github.com/google/uuid"
 )
@@ -26,7 +25,7 @@ func (s *UserService) CreateUser(ctx context.Context, username string) (*User, e
 	}
 
 	if user != nil {
-		return nil, errors.New("username already taken")
+		return nil, ErrUsernameTaken
 	}
 
 	user, err = s.repo.CreateUser(ctx, username)
