@@ -122,6 +122,8 @@ func (h *UserHandler) GetUserByUsername(ctx *gin.Context) {
 		})
 		return
 	}
+
+	ctx.JSON(http.StatusOK, UserToResponse(*user))
 }
 
 func UserToResponse(user users.User) *UserResponse {
