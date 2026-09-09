@@ -94,7 +94,7 @@ func (h *UserHandler) GetUserByID(ctx *gin.Context) {
 
 	if user == nil {
 		ctx.JSON(http.StatusNotFound, gin.H{
-			"error": "user not found",
+			"message": "user not found",
 		})
 		return
 	}
