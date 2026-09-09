@@ -62,6 +62,44 @@ func (h *EventHandler) CreateEvent(ctx *gin.Context) {
 
 }
 
+func (h *EventHandler) GetEventByID(ctx *gin.Context) {
+	id := ctx.Param("id")
+
+	if id == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "id must not be empty",
+		})
+		return
+	}
+
+	parsedID, err := uuid.Parse(id)
+
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	event, err := h.svc.GetEventByID(ctx.Request.Context(), parsedID)
+
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if event == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{
+			"message": "event not found",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, eventToResponse(*event))
+}
+
 func eventToResponse(event events.Event) EventResponse {
 	return EventResponse{
 		ID:          event.ID,

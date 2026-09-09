@@ -19,4 +19,5 @@ type Event struct {
 
 type EventRepository interface {
 	CreateEvent(ctx context.Context, name string, description string, category string, date time.Time, location string) (*Event, error)
+	GetEventByID(ctx context.Context, id uuid.UUID) (*Event, error)
 }

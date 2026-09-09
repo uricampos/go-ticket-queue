@@ -16,4 +16,5 @@ func SetupUsersRoutes(router *gin.Engine, userHandler *users.UserHandler) {
 func SetupEventsRoutes(router *gin.Engine, eventHandler *events.EventHandler) {
 	eventGroup := router.Group("/events")
 	eventGroup.POST("", eventHandler.CreateEvent)
+	eventGroup.GET("/:id", eventHandler.GetEventByID)
 }
