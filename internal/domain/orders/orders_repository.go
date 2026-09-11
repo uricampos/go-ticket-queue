@@ -18,7 +18,7 @@ type Order struct {
 }
 
 type OrderRepository interface {
-	CreateOrder(ctx context.Context, userID uuid.UUID, status string, idempotencyKey string, totalPrice decimal.Decimal) (*Order, error)
+	CreateOrder(ctx context.Context, userID uuid.UUID, idempotencyKey string, totalPrice decimal.Decimal) (*Order, error)
 	GetOrderByUserIDAndIdempotencyKey(ctx context.Context, userID uuid.UUID, idempotencyKey string) (*Order, error)
 	GetOrderByID(ctx context.Context, id uuid.UUID) (*Order, error)
 }

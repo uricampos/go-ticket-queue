@@ -17,8 +17,8 @@ func NewOrderService(repo OrderRepository) *OrderService {
 	}
 }
 
-func (s *OrderService) CreateOrder(ctx context.Context, userID uuid.UUID, status string, idempotencyKey string, totalPrice decimal.Decimal) (*Order, error) {
-	order, err := s.repo.CreateOrder(ctx, userID, status, idempotencyKey, totalPrice)
+func (s *OrderService) CreateOrder(ctx context.Context, userID uuid.UUID, idempotencyKey string, totalPrice decimal.Decimal) (*Order, error) {
+	order, err := s.repo.CreateOrder(ctx, userID, idempotencyKey, totalPrice)
 
 	if err != nil {
 		return nil, err

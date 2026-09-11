@@ -21,11 +21,12 @@ func NewOrderRepository(db *sql.DB) *OrderRepository {
 	}
 }
 
-func (r *OrderRepository) CreateOrder(ctx context.Context, userID uuid.UUID, status string, idempotencyKey string, totalPrice decimal.Decimal) (*orders.Order, error) {
+func (r *OrderRepository) CreateOrder(ctx context.Context, userID uuid.UUID, idempotencyKey string, totalPrice decimal.Decimal) (*orders.Order, error) {
 	var id uuid.UUID
 	var createdAt time.Time
+	var status string
 
-	err := r.db.QueryRowContext(ctx, "INSERT INTO orders (user_id, status, idempotency_key, total_price) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, idempotency_key) DO NOTHING RETURNING id, created_at", userID, status, idempotencyKey, totalPrice).Scan(&id, &createdAt)
+	err := r.db.QueryRowContext(ctx, "INSERT INTO orders (user_id, status, idempotency_key, total_price) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, idempotency_key) DO NOTHING RETURNING id, status, created_at", userID, "pending", idempotencyKey, totalPrice).Scan(&id, &status, &createdAt)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil

@@ -6,12 +6,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/uricampos/go-ticket-queue/internal/config"
 	eventsDomain "github.com/uricampos/go-ticket-queue/internal/domain/events"
+	ordersDomain "github.com/uricampos/go-ticket-queue/internal/domain/orders"
 	usersDomain "github.com/uricampos/go-ticket-queue/internal/domain/users"
 	eventsHandler "github.com/uricampos/go-ticket-queue/internal/infra/http/events"
+	ordersHandler "github.com/uricampos/go-ticket-queue/internal/infra/http/orders"
 	"github.com/uricampos/go-ticket-queue/internal/infra/http/routes"
 	usersInfra "github.com/uricampos/go-ticket-queue/internal/infra/http/users"
 	"github.com/uricampos/go-ticket-queue/internal/infra/postgres"
 	eventsRepo "github.com/uricampos/go-ticket-queue/internal/infra/postgres/events"
+	ordersRepo "github.com/uricampos/go-ticket-queue/internal/infra/postgres/orders"
 	usersRepo "github.com/uricampos/go-ticket-queue/internal/infra/postgres/users"
 )
 
@@ -49,6 +52,13 @@ func main() {
 	eventHandler := eventsHandler.NewEventHandler(*eventService)
 
 	routes.SetupEventsRoutes(router, eventHandler)
+
+	//  orders
+	orderRepo := ordersRepo.NewOrderRepository(db)
+	orderService := ordersDomain.NewOrderService(orderRepo)
+	ordersHandler := ordersHandler.NewOrderHandler(*orderService)
+
+	routes.SetupOrderRoutes(router, ordersHandler)
 
 	// server listen
 	router.Run(":" + cfg.ServerPort)
