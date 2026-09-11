@@ -18,3 +18,6 @@ migrate-version:
 
 create-migration:
 	migrate create -ext sql -dir migrations -seq $(name)
+
+test:
+	set -a; . ./.env; set +a; go test ./... -v
