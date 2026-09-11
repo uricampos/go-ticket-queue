@@ -18,11 +18,7 @@ type Config struct {
 
 func Load() (*Config, error) {
 
-	err := godotenv.Load()
-
-	if err != nil {
-		return nil, err
-	}
+	_ = godotenv.Load()
 
 	return &Config{
 		Env:        os.Getenv("ENV"),
