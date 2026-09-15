@@ -131,8 +131,32 @@ Still no business logic beyond the essentials (no auth, no `order_tickets` in th
 - `go test -race` confirmed the data race (unsynchronized concurrent reads/writes on the `Quantity` and `BuysDone` fields), and the business assertion (`BuysDone > 1`) confirmed the real-world consequence: more than one "purchase" approved for a single ticket.
 - Core takeaway: Go's `-race` detector only sees memory inside the Go process itself — a race happening purely through SQL against Postgres wouldn't be caught by it, which is why the simulation was built in memory before any database involvement.
 
-### Coming up (weeks 4-7)
-- **Week 4:** fix the race condition with `sync.Mutex`/`RWMutex`, with a before/after benchmark.
+### Week 4 — Concurrency: fixing the race condition with a mutex
+- Added a `sync.Mutex` to `TicketStock` (embedded by value as an unexported field, `sm`) — the zero-value mutex needs no separate construction, and keeping it unexported stops external code from locking/unlocking it directly, bypassing `Buy`.
+- The lock wraps the entire critical section of `Buy` — from reading `Quantity` through deciding `canBuyTicket` to writing the decrement — so the read-check-write sequence is now atomic from every other goroutine's point of view.
+- Reran the race test from week 3 five times in a row with `-race`; zero races detected:
+  ```
+  go test -race ./internal/domain/tickets/... -run TestTicketsStock_RaceCondition -v -count=5
+  ```
+- **Why the lock fixes it:** before, two goroutines could interleave so that both read `Quantity=1` before either wrote back, both concluded "I can buy", and both decremented — a classic lost-update race. With the mutex, one goroutine fully completes its read-check-write (and releases the lock) before another can even start evaluating the condition, so every read always reflects the latest write.
+- Wrote `BenchmarkTicketStock_Buy` using `b.RunParallel` (Go's tool for measuring throughput under real concurrent load, as opposed to a single-goroutine benchmark) and measured it under four conditions — with/without the mutex, and with/without the artificial `time.Sleep(1ms)` that week 3 used to widen the race window:
+  ```
+  go test -bench=. -run=^$ ./internal/domain/tickets/...
+  ```
+
+  Environment: `goos: linux`, `goarch: amd64`, `cpu: 13th Gen Intel(R) Core(TM) i7-13620H` (16 logical cores — reflected in the `-16` suffix on the benchmark name, i.e. `GOMAXPROCS=16`).
+
+  | | With mutex | Without mutex |
+  |---|---|---|
+  | **With artificial 1ms sleep** | 1,160,241 ns/op | 72,855 ns/op |
+  | **Without sleep** | 404.1 ns/op | 30.37 ns/op |
+
+  Only same-row comparisons are apples-to-apples (a single variable — the mutex — toggles; the sleep condition is held constant):
+  - **With the sleep:** removing the mutex is ~16x faster (72,855 vs 1,160,241 ns/op). Without the lock, all goroutines sleep concurrently across cores; with it, they sleep one at a time, serializing work that would otherwise run in parallel.
+  - **Without the sleep:** the mutex still costs ~13x more (404.1 vs 30.37 ns/op) even though the protected work is trivial (comparing and decrementing two ints). That gap is the real cost of **lock contention** — 16 goroutines competing for the same mutex — not the cost of the lock primitive itself (an uncontended `Lock`/`Unlock` pair alone costs tens of nanoseconds, not hundreds).
+  - Takeaway: a mutex's cost scales with how many goroutines are fighting over it, not just with how much work the critical section does — protecting even trivial operations under heavy concurrent access has a real, measurable price.
+
+### Coming up (weeks 5-7)
 - **Week 5:** worker pool with channels to process orders asynchronously.
 - **Week 6:** observability — structured logs (`slog`), basic metrics.
 - **Week 7:** portfolio polish — deployment, documented decisions, walkthrough video.
@@ -150,4 +174,9 @@ Runs the whole test suite with environment variables loaded from `.env` (necessa
 To reproduce week 3's concurrency analysis specifically:
 ```
 go test -race ./internal/domain/tickets/... -run TestTicketsStock_RaceCondition -v -count=5
+```
+
+To reproduce week 4's throughput benchmark:
+```
+go test -bench=. -run=^$ ./internal/domain/tickets/...
 ```
