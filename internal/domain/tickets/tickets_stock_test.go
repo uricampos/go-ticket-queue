@@ -26,3 +26,19 @@ func TestTicketsStock_RaceCondition(t *testing.T) {
 		t.Fatal("Race Condition detected!")
 	}
 }
+
+func BenchmarkTicketStock_Buy(b *testing.B) {
+	ticketStock := &TicketStock{
+		Type:     "full",
+		Quantity: b.N,
+	}
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			var wg sync.WaitGroup
+			wg.Add(1)
+			ticketStock.Buy(1, &wg)
+			wg.Wait()
+		}
+	})
+}

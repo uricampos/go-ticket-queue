@@ -2,13 +2,13 @@ package tickets
 
 import (
 	"sync"
-	"time"
 )
 
 type TicketStock struct {
 	Type     string
 	Quantity int
 	BuysDone int
+	sm       sync.Mutex
 }
 
 func (ts *TicketStock) Buy(quantity int, wg *sync.WaitGroup) *TicketStock {
@@ -16,16 +16,20 @@ func (ts *TicketStock) Buy(quantity int, wg *sync.WaitGroup) *TicketStock {
 
 	canBuyTicket := false
 
+	ts.sm.Lock()
+
 	if ts.Quantity > 0 && ts.Quantity >= quantity {
 		canBuyTicket = true
 		ts.BuysDone++
 	}
 
-	time.Sleep(1 * time.Millisecond)
+	// time.Sleep(1 * time.Millisecond)
 
 	if canBuyTicket {
 		ts.Quantity -= quantity
 	}
+
+	ts.sm.Unlock()
 
 	return ts
 }
