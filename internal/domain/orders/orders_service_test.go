@@ -2,6 +2,7 @@ package orders_test
 
 import (
 	"context"
+	"os"
 	"sync"
 	"testing"
 
@@ -29,7 +30,7 @@ func TestCreateOrder_ConcurrentSameIdempotencyKey_CreatesOnlyOndeOrder(t *testin
 	repo := ordersRepo.NewOrderRepository(db)
 	service := ordersDomain.NewOrderService(repo)
 
-	userID := "ef35b68f-9205-493d-92cf-518316dd88c7"
+	userID := os.Getenv("TEST_USER_ID")
 	parsedUserID, _ := uuid.Parse(userID)
 	idempotencyKey := uuid.NewString()
 	totalPrice := decimal.NewFromInt(100)
