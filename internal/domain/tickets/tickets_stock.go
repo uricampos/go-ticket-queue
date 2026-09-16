@@ -33,3 +33,22 @@ func (ts *TicketStock) Buy(quantity int, wg *sync.WaitGroup) *TicketStock {
 
 	return ts
 }
+
+type buyRequest struct {
+	quantity int
+	result   chan bool
+}
+
+func (ts *TicketStock) StartWorker(request <-chan buyRequest) {
+	go func() {
+		for req := range request {
+			approved := false
+			if ts.Quantity > 0 && ts.Quantity >= req.quantity {
+				ts.Quantity -= req.quantity
+				approved = true
+				ts.BuysDone++
+			}
+			req.result <- approved
+		}
+	}()
+}

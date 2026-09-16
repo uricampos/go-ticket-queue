@@ -156,8 +156,21 @@ Still no business logic beyond the essentials (no auth, no `order_tickets` in th
   - **Without the sleep:** the mutex still costs ~13x more (404.1 vs 30.37 ns/op) even though the protected work is trivial (comparing and decrementing two ints). That gap is the real cost of **lock contention** — 16 goroutines competing for the same mutex — not the cost of the lock primitive itself (an uncontended `Lock`/`Unlock` pair alone costs tens of nanoseconds, not hundreds).
   - Takeaway: a mutex's cost scales with how many goroutines are fighting over it, not just with how much work the critical section does — protecting even trivial operations under heavy concurrent access has a real, measurable price.
 
-### Coming up (weeks 5-7)
-- **Week 5:** worker pool with channels to process orders asynchronously.
+### Week 5 — Concurrency: the same problem solved with a channel-based worker
+- Implemented a second, alternative fix for the exact same race from weeks 3-4, this time using Go's other concurrency tool: channels, instead of a mutex.
+- `buyRequest` (`tickets_stock.go`) is a small message type carrying the purchase quantity and its own dedicated response channel (`result chan bool`) — the caller uses that private channel to get its individual answer back.
+- `StartWorker` launches a single dedicated goroutine that owns the `TicketStock` exclusively: it loops over an incoming `chan buyRequest` (`for req := range requests`), processing one request at a time. No mutex anywhere inside it — there's nothing to protect, because no other goroutine ever touches `Quantity`/`BuysDone` directly.
+- Callers (`TestTicketStock_RaceConditionChan`) never call `Buy` directly anymore; each one builds a `buyRequest` with its own response channel, sends it on the shared channel, and blocks on its own channel until the worker replies.
+- Confirmed race-free the same way as week 4 — five consecutive `-race` runs, zero races detected, plus the same business assertion (`BuysDone > 1`) passing:
+  ```
+  go test -race -run TestTicketStock_RaceConditionChan -v ./internal/domain/tickets/... -count=5
+  ```
+- **Mutex vs. channel — same bug, two different fixes:**
+  - A **mutex** lets many goroutines keep direct access to the shared state, and a lock decides who gets to touch it at any instant — the safety comes from the lock discipline everyone must follow.
+  - A **channel worker** removes shared access altogether: exactly one goroutine owns the state permanently, and every other goroutine only ever sends it a message describing what it wants done. This is the Go proverb in practice — *"don't communicate by sharing memory; share memory by communicating."*
+  - **When each fits better:** a mutex is simpler and cheaper for short, direct, synchronous access to shared state (like this one). A channel-based worker earns its complexity when you also want queuing, backpressure, or asynchronous processing decoupled from the caller — which is closer to what a real order-processing pipeline (the "Queue" in TicketQueue) needs. Multiple *independent* workers (a true worker pool) make sense for parallelizing unrelated tasks; for protecting one shared resource specifically, a single owning worker is the correct scale — adding more workers here would just reintroduce the original race.
+
+### Coming up (weeks 6-7)
 - **Week 6:** observability — structured logs (`slog`), basic metrics.
 - **Week 7:** portfolio polish — deployment, documented decisions, walkthrough video.
 
@@ -179,4 +192,9 @@ go test -race ./internal/domain/tickets/... -run TestTicketsStock_RaceCondition 
 To reproduce week 4's throughput benchmark:
 ```
 go test -bench=. -run=^$ ./internal/domain/tickets/...
+```
+
+To reproduce week 5's channel-based worker analysis:
+```
+go test -race -run TestTicketStock_RaceConditionChan -v ./internal/domain/tickets/... -count=5
 ```
