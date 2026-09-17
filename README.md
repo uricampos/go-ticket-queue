@@ -170,6 +170,34 @@ Still no business logic beyond the essentials (no auth, no `order_tickets` in th
   - A **channel worker** removes shared access altogether: exactly one goroutine owns the state permanently, and every other goroutine only ever sends it a message describing what it wants done. This is the Go proverb in practice — *"don't communicate by sharing memory; share memory by communicating."*
   - **When each fits better:** a mutex is simpler and cheaper for short, direct, synchronous access to shared state (like this one). A channel-based worker earns its complexity when you also want queuing, backpressure, or asynchronous processing decoupled from the caller — which is closer to what a real order-processing pipeline (the "Queue" in TicketQueue) needs. Multiple *independent* workers (a true worker pool) make sense for parallelizing unrelated tasks; for protecting one shared resource specifically, a single owning worker is the correct scale — adding more workers here would just reintroduce the original race.
 
+### Week 5 (continued) — wiring the worker pool into real order processing
+- Before integrating, revisited whether mutex/channel (the tools from weeks 4-5) were even the right fix for the *real* stock problem. They aren't: a mutex or a channel-owned worker only synchronizes goroutines **inside one process**. Once the shared state is a row in Postgres, the correct guarantee — one that also holds if the API ever runs as multiple instances behind a load balancer — is a single atomic, conditional `UPDATE`:
+  ```sql
+  UPDATE tickets
+  SET quantity_available = quantity_available - $1
+  WHERE id = $2 AND quantity_available >= $1
+  RETURNING quantity_available
+  ```
+  This is the same lesson as week 2's idempotency design: the database's own concurrency control is the actual source of truth, not an in-process lock. Wiring this specific update into the purchase flow (via `order_tickets`) is still a TODO — what follows integrates the worker *pool pattern* itself into real order creation, which solves a different, still-relevant problem: bounding concurrent processing load, not protecting a shared counter.
+- `OrderService` now owns a `jobs chan orderJob` and starts a fixed pool of worker goroutines (`StartWorkers`) inside its own constructor, `NewOrderService`. Neither the HTTP handler nor `main.go` changed a single line — `CreateOrder` kept its exact signature; internally, it now builds an `orderJob` with its own dedicated result channel, sends it on `s.jobs`, and blocks until a worker replies. The queue is entirely an implementation detail of the service.
+- Unlike the single-owner worker from the `TicketStock` exercise, this pool intentionally runs **multiple** workers — order-creation jobs are independent of each other (unlike one shared stock counter), so parallelizing across a fixed pool is the correct shape here, capping how many orders are processed concurrently without limiting how many can be *accepted* at once.
+- Load-tested the real `POST /orders` endpoint with a small throwaway script, `cmd/loadtest`: fires 2,000 goroutines at the running server, each with its own HTTP request, tracking status codes and elapsed time into shared slices (same index-per-goroutine pattern as the earlier concurrency tests). The idempotency key is a `main`-level variable passed into every call, making it trivial to switch between "2,000 requests, same key" and "2,000 requests, 2,000 unique keys":
+  ```
+  go run ./cmd/loadtest
+  ```
+  An initial attempt compared the repeated-key case (via `hey`) against the unique-key case (via this script) and produced a confusing, direction-flipping result — a sign the two *tools* weren't applying concurrency the same way (`hey` paces requests with `-c`; the script fires all goroutines at once), not a real effect of the key. Rerunning **both** conditions through the same script removed that confound:
+
+  | | Repeated key | Unique keys |
+  |---|---|---|
+  | **5 workers** | 268.6 ms | 835 ms |
+  | **50 workers** | 246.5 ms | 368.6 ms |
+
+  All 8,000 requests across every run returned `201` with zero errors.
+
+  - **Repeated key barely changes with more workers** (268.6→246.5 ms, ~8%): all 2,000 requests contend for the *same* row, and Postgres serializes access to that row internally via its own row-level lock — no matter how many application-level workers are free, they still queue at the database for that one row. The bottleneck isn't the pool size here, it's the database's own concurrency control on a single hot row.
+  - **Unique keys improve substantially with more workers** (835→368.6 ms, ~56%): with no artificial contention on a shared row, the database can genuinely write many different rows in parallel, so the worker pool's size becomes the real limiting factor.
+  - **Takeaway:** a worker pool's size matters most when the underlying work is actually parallelizable. When work is serialized by contention on a shared resource regardless of application-level concurrency, throwing more workers at it barely helps — the bottleneck has already moved somewhere else (here, a single Postgres row lock).
+
 ### Coming up (weeks 6-7)
 - **Week 6:** observability — structured logs (`slog`), basic metrics.
 - **Week 7:** portfolio polish — deployment, documented decisions, walkthrough video.
