@@ -31,7 +31,7 @@ func NewOrderService(repo OrderRepository) *OrderService {
 		jobs: make(chan orderJob),
 	}
 
-	s.StartWorkers(50)
+	s.StartWorkers(5)
 	return s
 }
 
