@@ -9,29 +9,42 @@ import (
 
 type OrderService struct {
 	repo OrderRepository
+	jobs chan orderJob
+}
+
+type orderJobResult struct {
+	order *Order
+	err   error
+}
+
+type orderJob struct {
+	ctx            context.Context
+	userID         uuid.UUID
+	idempotencyKey string
+	totalPrice     decimal.Decimal
+	result         chan orderJobResult
 }
 
 func NewOrderService(repo OrderRepository) *OrderService {
-	return &OrderService{
+	s := &OrderService{
 		repo: repo,
+		jobs: make(chan orderJob),
 	}
+
+	s.StartWorkers(50)
+	return s
 }
 
 func (s *OrderService) CreateOrder(ctx context.Context, userID uuid.UUID, idempotencyKey string, totalPrice decimal.Decimal) (*Order, error) {
-	order, err := s.repo.CreateOrder(ctx, userID, idempotencyKey, totalPrice)
+	resultChan := make(chan orderJobResult)
+	s.jobs <- orderJob{ctx, userID, idempotencyKey, totalPrice, resultChan}
+	res := <-resultChan
 
-	if err != nil {
-		return nil, err
+	if res.err != nil {
+		return nil, res.err
 	}
 
-	if order == nil {
-		order, err = s.GetOrderByUserIDAndIdempotencyKey(ctx, userID, idempotencyKey)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return order, nil
+	return res.order, nil
 }
 
 func (s *OrderService) GetOrderByUserIDAndIdempotencyKey(ctx context.Context, userID uuid.UUID, idempotencyKey string) (*Order, error) {
