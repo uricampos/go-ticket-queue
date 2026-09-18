@@ -2,6 +2,8 @@ package main
 
 import (
 	"log"
+	"log/slog"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/uricampos/go-ticket-queue/internal/config"
@@ -35,6 +37,8 @@ func main() {
 	}
 
 	defer db.Close()
+
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
 	// setup routes
 	router := gin.Default()

@@ -2,6 +2,7 @@ package orders
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -38,12 +39,15 @@ func NewOrderService(repo OrderRepository) *OrderService {
 func (s *OrderService) CreateOrder(ctx context.Context, userID uuid.UUID, idempotencyKey string, totalPrice decimal.Decimal) (*Order, error) {
 	resultChan := make(chan orderJobResult)
 	s.jobs <- orderJob{ctx, userID, idempotencyKey, totalPrice, resultChan}
+	slog.Info("order job enqueued", "user_id", userID, "idempotency_key", idempotencyKey)
 	res := <-resultChan
 
 	if res.err != nil {
+		slog.Error("order processing failed", "user_id", userID, "idempotency_key", idempotencyKey, "error", res.err)
 		return nil, res.err
 	}
 
+	slog.Info("order processed", "user_id", userID, "idempotency_key", idempotencyKey, "order_id", res.order.ID, "status", res.order.Status)
 	return res.order, nil
 }
 
