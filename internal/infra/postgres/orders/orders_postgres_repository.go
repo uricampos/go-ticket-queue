@@ -100,3 +100,14 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uuid.UUID) (*orde
 		CreatedAt:      createdAt,
 	}, nil
 }
+
+func (r *OrderRepository) GetOrdersProcessedCount(ctx context.Context) (int, error) {
+	ordersProcessed := 0
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(status) FROM orders WHERE status = $1", "pending").Scan(&ordersProcessed)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return ordersProcessed, nil
+}

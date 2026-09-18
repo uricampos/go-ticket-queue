@@ -105,6 +105,8 @@ Useful `makefile` targets: `migrate-up`, `migrate-down`, `migrate-up-one`, `migr
 | `POST` | `/events` | Create an event |
 | `GET` | `/events/:id` | Get event by ID |
 | `POST` | `/orders` | Create an order — requires an `Idempotency-Key` header |
+| `GET` | `/orders/processed` | Count of orders processed so far |
+| `GET` | `/orders/queue-size` | Current number of order jobs waiting for a free worker |
 
 Still no business logic beyond the essentials (no auth, no `order_tickets` in the order-creation flow yet).
 
@@ -198,8 +200,23 @@ Still no business logic beyond the essentials (no auth, no `order_tickets` in th
   - **Unique keys improve substantially with more workers** (835→368.6 ms, ~56%): with no artificial contention on a shared row, the database can genuinely write many different rows in parallel, so the worker pool's size becomes the real limiting factor.
   - **Takeaway:** a worker pool's size matters most when the underlying work is actually parallelizable. When work is serialized by contention on a shared resource regardless of application-level concurrency, throwing more workers at it barely helps — the bottleneck has already moved somewhere else (here, a single Postgres row lock).
 
-### Coming up (weeks 6-7)
-- **Week 6:** observability — structured logs (`slog`), basic metrics.
+### Week 6 — Observability
+- Configured a single global `slog` handler once, in `main.go` (`slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))`), so every log line across the app comes out as structured JSON instead of loose `fmt.Println` text.
+- Instrumented the full lifecycle of an order so it can be reconstructed from logs alone: `order job enqueued` (right after the job is handed to the shared channel) → `order being processed by worker` (worker id + which order) → either `order created` or `order already existed, idempotency conflict resolved` (worker distinguishes the two outcomes explicitly, instead of leaving it to be inferred from the absence of a log line) → `order processed` / `order processing failed` (final outcome back in `CreateOrder`, with the error attached on failure). A single request produces a readable, ordered trace like:
+  ```json
+  {"msg":"order job enqueued","user_id":"...","idempotency_key":"..."}
+  {"msg":"order being processed by worker","worker_id":1,"user_id":"...","idempotency_key":"..."}
+  {"msg":"order already existed, idempotency conflict resolved","user_id":"...","idempotency_key":"...","order_id":"...","status":"pending"}
+  {"msg":"order processed","user_id":"...","idempotency_key":"...","order_id":"...","status":"pending"}
+  ```
+- Added two metrics endpoints: `GET /orders/processed` (a `COUNT` query against the database) and `GET /orders/queue-size` (an in-process `atomic.Int64` — Go's third concurrency primitive used in this project, after mutex and channel — incremented right before a job enters `s.jobs` and decremented the instant a worker picks it up). The queue-size counter exists because an **unbuffered channel has no meaningful length** (`len()` on it is always `0` — a send only completes when a receive is happening at that exact instant, so nothing ever sits "inside" it to count); tracking queue depth for an unbuffered channel requires a counter kept alongside it, not the channel itself.
+- Reviewed the codebase for the classic N+1 query pattern (fetch a list, then query again per item) and concluded it structurally cannot occur here yet: every endpoint fetches exactly one row (by primary key or a unique constraint) or a single aggregate — there is no list-returning endpoint anywhere, so there is no "N" to multiply. Also confirmed no `SELECT *` exists anywhere in the codebase. Noted as a forward-looking risk, not a current one: an eventual "list a user's orders with their tickets" endpoint would need a `JOIN` or a single `WHERE ... IN (...)` query, not a per-row loop.
+
+Two bugs worth naming because they were easy to miss and had unusually severe failure modes:
+  - `OrderService.GetOrdersProcessedCount` originally called `s.GetOrdersProcessedCount` — itself, instead of `s.repo.GetOrdersProcessedCount` — an infinite recursion that crashed the process with `fatal error: stack overflow` on the very first call.
+  - Passing `OrderService` **by value** into `NewOrderHandler` (a pattern already in use for `UserHandler`/`EventHandler`) broke the moment `OrderService` gained its `atomic.Int64` field: `go vet` caught it as `NewOrderHandler passes lock by value` — atomic types embed a `noCopy` guard specifically to catch this, since copying one after use silently breaks its atomicity. Fixed by injecting `*OrderService` instead of a value everywhere.
+
+### Coming up (week 7)
 - **Week 7:** portfolio polish — deployment, documented decisions, walkthrough video.
 
 ---

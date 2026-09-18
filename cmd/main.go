@@ -60,7 +60,7 @@ func main() {
 	//  orders
 	orderRepo := ordersRepo.NewOrderRepository(db)
 	orderService := ordersDomain.NewOrderService(orderRepo)
-	ordersHandler := ordersHandler.NewOrderHandler(*orderService)
+	ordersHandler := ordersHandler.NewOrderHandler(orderService)
 
 	routes.SetupOrderRoutes(router, ordersHandler)
 

@@ -11,10 +11,10 @@ import (
 )
 
 type OrderHandler struct {
-	svc orders.OrderService
+	svc *orders.OrderService
 }
 
-func NewOrderHandler(svc orders.OrderService) *OrderHandler {
+func NewOrderHandler(svc *orders.OrderService) *OrderHandler {
 	return &OrderHandler{
 		svc: svc,
 	}
@@ -65,6 +65,26 @@ func (h *OrderHandler) CreateOrder(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusCreated, OrderToResponse(*order))
+}
+
+func (h *OrderHandler) GetOrdersProcessedCount(ctx *gin.Context) {
+
+	ordersProcessed, err := h.svc.GetOrdersProcessedCount(ctx.Request.Context())
+
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, ordersProcessed)
+}
+
+func (h *OrderHandler) GetQueueSize(ctx *gin.Context) {
+	queueSize := h.svc.GetQueueSize()
+
+	ctx.JSON(http.StatusOK, queueSize)
 }
 
 func OrderToResponse(order orders.Order) *OrderResponse {

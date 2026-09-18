@@ -23,4 +23,6 @@ func SetupEventsRoutes(router *gin.Engine, eventHandler *events.EventHandler) {
 func SetupOrderRoutes(router *gin.Engine, orderHandler *orders.OrderHandler) {
 	orderGroup := router.Group("/orders")
 	orderGroup.POST("", orderHandler.CreateOrder)
+	orderGroup.GET("/processed", orderHandler.GetOrdersProcessedCount)
+	orderGroup.GET("/queue-size", orderHandler.GetQueueSize)
 }

@@ -12,6 +12,7 @@ func (s *OrderService) StartWorkers(i int) {
 	for idx := range i {
 		go func() {
 			for job := range s.jobs {
+				s.queueSize.Add(-1)
 				slog.Info("order being processed by worker", "worker_id", idx, "user_id", job.userID, "idempotency_key", job.idempotencyKey)
 				order, err := s.ProcessOrder(job.ctx, job.userID, job.idempotencyKey, job.totalPrice)
 				job.result <- orderJobResult{order, err}

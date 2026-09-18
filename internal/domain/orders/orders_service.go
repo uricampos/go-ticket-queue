@@ -3,14 +3,16 @@ package orders
 import (
 	"context"
 	"log/slog"
+	"sync/atomic"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
 type OrderService struct {
-	repo OrderRepository
-	jobs chan orderJob
+	repo      OrderRepository
+	jobs      chan orderJob
+	queueSize atomic.Int64
 }
 
 type orderJobResult struct {
@@ -38,6 +40,7 @@ func NewOrderService(repo OrderRepository) *OrderService {
 
 func (s *OrderService) CreateOrder(ctx context.Context, userID uuid.UUID, idempotencyKey string, totalPrice decimal.Decimal) (*Order, error) {
 	resultChan := make(chan orderJobResult)
+	s.queueSize.Add(1)
 	s.jobs <- orderJob{ctx, userID, idempotencyKey, totalPrice, resultChan}
 	slog.Info("order job enqueued", "user_id", userID, "idempotency_key", idempotencyKey)
 	res := <-resultChan
@@ -69,4 +72,12 @@ func (s *OrderService) GetOrderByID(ctx context.Context, id uuid.UUID) (*Order, 
 	}
 
 	return order, err
+}
+
+func (s *OrderService) GetOrdersProcessedCount(ctx context.Context) (int, error) {
+	return s.repo.GetOrdersProcessedCount(ctx)
+}
+
+func (s *OrderService) GetQueueSize() int {
+	return int(s.queueSize.Load())
 }
