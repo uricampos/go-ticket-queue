@@ -1,0 +1,271 @@
+openapi: 3.0.3
+info:
+  title: Go TicketQueue API
+  description: Backend for event ticket sales — idempotent order creation, worker-pool based processing.
+  version: "1.0.0"
+servers:
+  - url: https://go-ticket-queue.uricampos.dev
+
+paths:
+  /users:
+    post:
+      summary: Create a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username]
+              properties:
+                username:
+                  type: string
+                  example: johndoe
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Missing or invalid username
+        "409":
+          description: Username already taken
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+    get:
+      summary: Get user by username
+      parameters:
+        - name: username
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: User not found
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /users/{id}:
+    get:
+      summary: Get user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Invalid UUID
+        "404":
+          description: User not found
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /events:
+    post:
+      summary: Create an event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, description, category, date, location]
+              properties:
+                name:
+                  type: string
+                  example: Rock in Rio
+                description:
+                  type: string
+                  example: Annual music festival
+                category:
+                  type: string
+                  example: music
+                date:
+                  type: string
+                  format: date-time
+                location:
+                  type: string
+                  example: Rio de Janeiro, Brazil
+      responses:
+        "201":
+          description: Event created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+        "400":
+          description: Missing or invalid fields
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /events/{id}:
+    get:
+      summary: Get event by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Event found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+        "400":
+          description: Invalid UUID
+        "404":
+          description: Event not found
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /orders:
+    post:
+      summary: Create an order
+      description: Idempotent — retrying with the same Idempotency-Key returns the original order instead of creating a duplicate.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Client-generated key identifying this specific purchase attempt.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, total_price]
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                total_price:
+                  type: number
+                  example: 100.00
+      responses:
+        "201":
+          description: Order created (or returned unchanged, if this key was already processed)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          description: Missing Idempotency-Key or invalid body
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /orders/processed:
+    get:
+      summary: Count of orders processed so far
+      responses:
+        "200":
+          description: Total count
+          content:
+            application/json:
+              schema:
+                type: integer
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /orders/queue-size:
+    get:
+      summary: Current number of order jobs waiting for a free worker
+      responses:
+        "200":
+          description: Current queue depth
+          content:
+            application/json:
+              schema:
+                type: integer
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+components:
+  responses:
+    TooManyRequests:
+      description: Rate limit exceeded for this client
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: too many requests
+
+  schemas:
+    User:
+      type: object
+      properties:
+        ID:
+          type: string
+          format: uuid
+        Username:
+          type: string
+        CreatedAt:
+          type: string
+          format: date-time
+
+    Event:
+      type: object
+      properties:
+        ID:
+          type: string
+          format: uuid
+        Name:
+          type: string
+        Description:
+          type: string
+        Category:
+          type: string
+        Date:
+          type: string
+          format: date-time
+        Location:
+          type: string
+        CreatedAt:
+          type: string
+          format: date-time
+
+    Order:
+      type: object
+      properties:
+        ID:
+          type: string
+          format: uuid
+        UserID:
+          type: string
+          format: uuid
+        Status:
+          type: string
+          example: pending
+        IdempotencyKey:
+          type: string
+        TotalPrice:
+          type: number
+        CreatedAt:
+          type: string
+          format: date-time

@@ -73,6 +73,10 @@ func main() {
 
 	routes.SetupOrderRoutes(router, ordersHandler, rateLimitMiddleware)
 
+	// static files for docs
+	router.StaticFile("/docs", "./docs.html")
+	router.StaticFile("/openapi.yaml", "./openapi.yaml")
+
 	// server listen
 	router.Run(":" + cfg.ServerPort)
 }
