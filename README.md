@@ -6,7 +6,9 @@ A Go backend for event ticket sales, with order processing built around a queue.
 - **Real idempotency:** a purchase request can be resent by the client (timeout, network retry) without generating a duplicate charge.
 - **Real concurrency:** limited ticket stock contested by multiple buyers at the same time — the classic "last ticket" race condition.
 
-The project is being built incrementally, week by week, with technical decisions documented alongside the code. This README tracks that progress and will keep growing as the project evolves.
+The project was built incrementally, week by week, with technical decisions documented alongside the code — the full log is below, from initial N:N modeling through to a live deployment.
+
+**Live demo:** [go-ticket-queue.uricampos.dev](https://go-ticket-queue.uricampos.dev) · **API reference:** [go-ticket-queue.uricampos.dev/docs](https://go-ticket-queue.uricampos.dev/docs)
 
 ---
 
@@ -107,8 +109,10 @@ Useful `makefile` targets: `migrate-up`, `migrate-down`, `migrate-up-one`, `migr
 | `POST` | `/orders` | Create an order — requires an `Idempotency-Key` header |
 | `GET` | `/orders/processed` | Count of orders processed so far |
 | `GET` | `/orders/queue-size` | Current number of order jobs waiting for a free worker |
+| `GET` | `/docs` | Interactive API reference (Scalar), generated from `openapi.yaml` |
+| `GET` | `/openapi.yaml` | The raw OpenAPI 3.0 specification |
 
-Still no business logic beyond the essentials (no auth, no `order_tickets` in the order-creation flow yet).
+`/users`, `/events` and `/orders` are all rate-limited per client IP (see week 7 below); `/docs` and `/openapi.yaml` are not. Still no business logic beyond the essentials (no auth, no `order_tickets` in the order-creation flow yet).
 
 ---
 
@@ -216,8 +220,35 @@ Two bugs worth naming because they were easy to miss and had unusually severe fa
   - `OrderService.GetOrdersProcessedCount` originally called `s.GetOrdersProcessedCount` — itself, instead of `s.repo.GetOrdersProcessedCount` — an infinite recursion that crashed the process with `fatal error: stack overflow` on the very first call.
   - Passing `OrderService` **by value** into `NewOrderHandler` (a pattern already in use for `UserHandler`/`EventHandler`) broke the moment `OrderService` gained its `atomic.Int64` field: `go vet` caught it as `NewOrderHandler passes lock by value` — atomic types embed a `noCopy` guard specifically to catch this, since copying one after use silently breaks its atomicity. Fixed by injecting `*OrderService` instead of a value everywhere.
 
-### Coming up (week 7)
-- **Week 7:** portfolio polish — deployment, documented decisions, walkthrough video.
+### Week 7 — API documentation, rate limiting, and a real deployment
+
+**API documentation (`openapi.yaml` + Scalar).** Wrote a full OpenAPI 3.0 specification for every endpoint — request bodies, headers (`Idempotency-Key`), status codes per outcome, and reusable `components/schemas` (`User`, `Event`, `Order`) referenced via `$ref` instead of repeated inline definitions. Rendered it with [Scalar](https://github.com/scalar/scalar), which turns a spec file into a full interactive reference (sidebar navigation, "try it" requests, examples) with a single embed script — no separate frontend project, no build step:
+```html
+<script id="api-reference" data-url="/openapi.yaml"></script>
+<script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+```
+Both `docs.html` and `openapi.yaml` are served directly by the Go binary via `router.StaticFile`, registered outside the rate-limited route groups.
+
+**Rate limiting.** A per-client-IP token-bucket limiter (`golang.org/x/time/rate`), applied as Gin middleware on the `/users`, `/events` and `/orders` route groups. The state — one `*rate.Limiter` per IP — lives in a `map[string]*rate.Limiter` guarded by a `sync.Mutex`, Go's *fourth* concurrency tool used in this project (after mutex-on-a-struct, channel-based worker, and `atomic.Int64`), applied here to protect a shared map instead of a counter or a domain object. Three bugs surfaced while wiring it up, all textbook nil-value mistakes:
+  - `var ipMutex *sync.Mutex` and `var ipList map[string]*rate.Limiter` — both declared with `var` instead of initialized (`&sync.Mutex{}`, `make(...)`) — a nil pointer panics on `.Lock()`, a nil map panics on write.
+  - The lookup helper created a new limiter for an unseen IP, stored it in the map, but returned the *original* (nil) variable instead of the new one — every first-time visitor got a nil `*rate.Limiter` back.
+  - The classic missing `return` after `ctx.Abort()`: without it, a rejected request still fell through to `ctx.Next()` and got processed anyway.
+
+  Tuned the limits for the actual audience this API has — not production traffic, but a recruiter or interviewer clicking around the Scalar docs. An aggressive limit (the initial guess was 0.5 req/s) would visibly throttle someone just exploring the demo; a generous one (2 req/s, burst 15) still stops a scripted flood cold while being invisible to a human clicking buttons.
+
+**Deployment.** Shipped to an existing VPS that already runs other projects behind a shared `nginx`, as a plain Go binary managed by `systemd` (no Docker for the app itself):
+  - Cross-compiled locally (`GOOS=linux GOARCH=amd64 go build`) and copied the binary over — no Go toolchain needed on the server.
+  - A **dedicated** `docker-compose` Postgres instance for TicketQueue (`ticketqueue-db`), isolated from the VPS's other projects' shared database — deliberately *not* reusing the existing shared Postgres that other apps on the box already depend on, so this project's data and uptime don't couple to theirs. Bound to `127.0.0.1` only, never exposed to the internet, since the Go binary reaches it over localhost.
+  - Migrations applied from the local machine through an SSH tunnel to the VPS's Postgres port, rather than installing `migrate` or exposing the database port publicly.
+  - A `systemd` unit (`go-ticket-queue.service`) runs the binary, restarts it on failure, and starts it on boot.
+  - `nginx` reverse-proxies `go-ticket-queue.uricampos.dev` to the app's local port, with `certbot` issuing and auto-renewing the TLS certificate — added as a new, independent site alongside the VPS's existing ones, without touching their configuration.
+  - Caught a real port collision before it caused an outage: the app's local `.env` defaults to port `5001`, which was already bound to an unrelated service on that VPS. Production uses a different port, configured only in the server's own `.env` — no change needed locally.
+
+### Closing the loop
+
+The three gaps this project set out to close are each demonstrably closed, not just described: **N:N modeling** in the five-table schema and its deliberate FK/denormalization choices (weeks 1-2); **real idempotency**, proven under actual concurrent HTTP load, not just unit-tested (week 2, and again under the load tests in week 5); and **real concurrency**, solved two different ways (mutex, then channel-based worker) on a reproduced-on-purpose race condition, benchmarked, and finally applied to real order processing bounded by a worker pool (weeks 3-5). Observability (week 6) and a public, documented, rate-limited deployment (week 7) turn the whole thing from a local exercise into something that can be handed to someone else to poke at.
+
+Natural next steps exist but are deliberately out of scope here — adding gRPC or a real message broker (Kafka/RabbitMQ) on top of this same project, as the next things that show up often in Go backend roles in Europe. This project's job was the fundamentals underneath those, not the fundamentals plus everything else.
 
 ---
 
