@@ -1,6 +1,6 @@
 module github.com/uricampos/go-ticket-queue
 
-go 1.25.0
+go 1.26.0
 
 require github.com/joho/godotenv v1.5.1
 
@@ -40,5 +40,6 @@ require (
 	golang.org/x/net v0.51.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
+	golang.org/x/time v0.16.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 )

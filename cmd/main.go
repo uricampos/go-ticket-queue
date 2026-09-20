@@ -4,6 +4,7 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/uricampos/go-ticket-queue/internal/config"
@@ -18,6 +19,8 @@ import (
 	eventsRepo "github.com/uricampos/go-ticket-queue/internal/infra/postgres/events"
 	ordersRepo "github.com/uricampos/go-ticket-queue/internal/infra/postgres/orders"
 	usersRepo "github.com/uricampos/go-ticket-queue/internal/infra/postgres/users"
+	"github.com/uricampos/go-ticket-queue/internal/middlewares"
+	"golang.org/x/time/rate"
 )
 
 func main() {
@@ -40,6 +43,12 @@ func main() {
 
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
+	// setup middlewares
+	// rate limit
+	ipList := make(map[string]*rate.Limiter)
+	ipMutex := &sync.Mutex{}
+	rateLimitMiddleware := middlewares.NewRateLimitMiddleware(ipList, ipMutex)
+
 	// setup routes
 	router := gin.Default()
 
@@ -48,21 +57,21 @@ func main() {
 	userService := usersDomain.NewUserService(userRepo)
 	userHandler := usersInfra.NewUserHandler(*userService)
 
-	routes.SetupUsersRoutes(router, userHandler)
+	routes.SetupUsersRoutes(router, userHandler, rateLimitMiddleware)
 
 	// events
 	eventRepo := eventsRepo.NewEventsRepository(db)
 	eventService := eventsDomain.NewEventService(eventRepo)
 	eventHandler := eventsHandler.NewEventHandler(*eventService)
 
-	routes.SetupEventsRoutes(router, eventHandler)
+	routes.SetupEventsRoutes(router, eventHandler, rateLimitMiddleware)
 
 	//  orders
 	orderRepo := ordersRepo.NewOrderRepository(db)
 	orderService := ordersDomain.NewOrderService(orderRepo)
 	ordersHandler := ordersHandler.NewOrderHandler(orderService)
 
-	routes.SetupOrderRoutes(router, ordersHandler)
+	routes.SetupOrderRoutes(router, ordersHandler, rateLimitMiddleware)
 
 	// server listen
 	router.Run(":" + cfg.ServerPort)
